@@ -37,7 +37,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     onSelectChat,
     onDeleteChat,
 }) => {
-    const [historyOpen, setHistoryOpen] = useState(true);
+    const [historyOpen, setHistoryOpen] = useState(false);
 
     return (
         <>
@@ -78,11 +78,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         {/* New Chat Button */}
                         <button
                             onClick={onNewChat}
-                            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${
-                                currentView === 'new-chat' && activeChatId === null
+                            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${currentView === 'new-chat' && activeChatId === null
                                     ? 'bg-[#63a2cf] text-white shadow-sm'
                                     : 'text-gray-700 hover:bg-gray-50'
-                            }`}
+                                }`}
                         >
                             <PlusIcon className="w-5 h-5" />
                             New Chat
@@ -92,11 +91,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         <div>
                             <button
                                 onClick={() => setHistoryOpen(!historyOpen)}
-                                className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm font-medium transition-all ${
-                                    currentView === 'history'
+                                className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-sm font-medium transition-all ${currentView === 'history'
                                         ? 'text-[#4682b4] bg-[#eaf2f8]/60 font-semibold'
                                         : 'text-gray-700 hover:bg-gray-50'
-                                }`}
+                                    }`}
                             >
                                 <div className="flex items-center gap-3">
                                     <ChatBubbleLeftRightIcon className="w-5 h-5 text-gray-600" />
@@ -131,11 +129,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                                 <div
                                                     key={session.id}
                                                     onClick={() => onSelectChat(session.id)}
-                                                    className={`group relative flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium cursor-pointer transition-colors ${
-                                                        isActive
+                                                    className={`group relative flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium cursor-pointer transition-colors ${isActive
                                                             ? 'bg-[#63a2cf] text-white shadow-sm'
                                                             : 'text-gray-600 hover:bg-gray-100/80 hover:text-gray-900'
-                                                    }`}
+                                                        }`}
                                                 >
                                                     <span className="truncate pr-4" title={session.title}>
                                                         {session.title || 'Untitled Chat'}
@@ -143,9 +140,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                                     <button
                                                         onClick={(e) => onDeleteChat(session.id, e)}
                                                         title="Delete chat"
-                                                        className={`opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-500/20 transition-opacity ${
-                                                            isActive ? 'text-white' : 'text-gray-400 hover:text-red-500'
-                                                        }`}
+                                                        className={`opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-500/20 transition-opacity ${isActive ? 'text-white' : 'text-gray-400 hover:text-red-500'
+                                                            }`}
                                                     >
                                                         <Trash2 className="w-3.5 h-3.5" />
                                                     </button>
@@ -163,11 +159,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                 onViewChange('settings');
                                 setIsOpen(false);
                             }}
-                            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${
-                                currentView === 'settings'
+                            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all ${currentView === 'settings'
                                     ? 'bg-[#63a2cf] text-white shadow-sm'
                                     : 'text-gray-700 hover:bg-gray-50'
-                            }`}
+                                }`}
                         >
                             <CognitionIcon className="w-5 h-5" />
                             Settings

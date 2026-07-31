@@ -130,7 +130,8 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
     const hasChatStarted = messages.length > 0 || selectedFile !== null;
 
     return (
-        <section className="flex-1 flex flex-col h-screen w-full bg-white relative overflow-hidden">
+        /* Changed h-screen to h-full max-h-screen to snap exactly to its layout block */
+        <section className="flex-1 flex flex-col h-full max-h-screen w-full bg-white relative overflow-hidden">
             {/* Top Header navbar */}
             <header className="h-16 border-b border-gray-100 flex items-center justify-between px-4 sm:px-8 bg-white z-10 shrink-0">
                 <div className="flex items-center gap-3">
@@ -144,7 +145,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                     </button>
                     <div>
                         <h1 className="font-bold text-base sm:text-lg text-[#0b3c5d]">
-                            {activeSession ? activeSession.title : 'Finance AI'}
+                            {'Finance AI'}
                         </h1>
                     </div>
                 </div>
@@ -154,13 +155,13 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                 </div>
             </header>
 
-            {/* Main view handling dynamic positioning */}
-            <main className={`flex-1 overflow-y-auto p-4 sm:p-8 flex flex-col transition-all duration-500 ${
-                hasChatStarted ? 'justify-start' : 'justify-center items-center'
-            }`}>
-                {/* Initial Welcome Text (Hidden when chat progresses) */}
+            {/* Main Content Area */}
+            {/* Swapped p-4 sm:p-8 to py-4 px-4 sm:p-8 to avoid unnecessary bottom-padding cutoff */}
+            <main className={`flex-1 overflow-y-auto py-4 px-4 sm:p-8 flex flex-col min-h-0 transition-all duration-500 ${hasChatStarted ? 'justify-start' : 'justify-center items-center'
+                }`}>
+                {/* Initial Welcome Text */}
                 {!hasChatStarted && (
-                    <div className="text-center space-y-2 mb-8 animate-fade-in">
+                    <div className="text-center space-y-2 mb-8 animate-fade-in w-full">
                         <p className="text-gray-400 text-base sm:text-lg px-4">
                             Welcome {userName}! Ask me anything about your finances or upload a bank statement.
                         </p>
@@ -169,24 +170,21 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
 
                 {/* Render Messages Timeline */}
                 {messages.length > 0 && (
-                    <div className="w-full max-w-3xl mx-auto space-y-4 mb-6">
+                    <div className="w-full max-w-3xl mx-auto space-y-4 mb-2">
                         {messages.map((msg) => (
                             <div
                                 key={msg.id}
-                                className={`flex flex-col max-w-[80%] ${
-                                    msg.sender === 'user' ? 'ml-auto items-end' : 'mr-auto items-start'
-                                }`}
+                                className={`flex flex-col max-w-[85%] sm:max-w-[80%] ${msg.sender === 'user' ? 'ml-auto items-end' : 'mr-auto items-start'
+                                    }`}
                             >
-                                <div className={`p-4 rounded-2xl text-sm sm:text-base shadow-sm ${
-                                    msg.sender === 'user'
+                                <div className={`p-4 rounded-2xl text-sm sm:text-base shadow-sm ${msg.sender === 'user'
                                         ? 'bg-[#63a2cf] text-white rounded-tr-none'
                                         : 'bg-gray-100 text-gray-800 rounded-tl-none border border-gray-200'
-                                }`}>
-                                    {msg.text && <p>{msg.text}</p>}
+                                    }`}>
+                                    {msg.text && <p className="whitespace-pre-wrap break-words">{msg.text}</p>}
                                     {msg.fileName && (
-                                        <div className={`inline-flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-md mt-1.5 ${
-                                            msg.sender === 'user' ? 'bg-white/20 text-white' : 'bg-gray-200 text-gray-700'
-                                        }`}>
+                                        <div className={`inline-flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-md mt-1.5 ${msg.sender === 'user' ? 'bg-white/20 text-white' : 'bg-gray-200 text-gray-700'
+                                            }`}>
                                             📎 {msg.fileName}
                                         </div>
                                     )}
@@ -228,10 +226,10 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
 
             {/* Bottom Input Housing when Active */}
             {hasChatStarted && (
-                <footer className="p-4 sm:p-6 border-t border-gray-100 bg-white shrink-0 animate-slide-up">
+                <footer className="p-3 sm:p-6 border-t border-gray-100 bg-white shrink-0">
                     <div className="max-w-3xl mx-auto">
                         {selectedFile && (
-                            <div className="inline-flex items-center gap-2 bg-gray-100 border border-gray-200 text-gray-600 text-xs sm:text-sm px-3 py-1.5 rounded-lg mb-3">
+                            <div className="inline-flex items-center gap-2 bg-gray-100 border border-gray-200 text-gray-600 text-xs sm:text-sm px-3 py-1.5 rounded-lg mb-2">
                                 📎 <span className="font-medium truncate max-w-[200px]">{selectedFile.name}</span>
                                 <button type="button" onClick={() => setSelectedFile(null)} className="text-gray-400 hover:text-red-500 font-bold ml-1">&times;</button>
                             </div>
@@ -291,7 +289,7 @@ const ChatInputForm: React.FC<InputFormProps> = ({
                 placeholder="Type your question for Finance AI..."
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
-                className="w-full pl-12 pr-14 py-3.5 sm:py-4 border border-gray-200 rounded-full focus:outline-none focus:ring-2 focus:ring-[#63a2cf]/50 bg-[#fafafa] text-sm sm:text-base text-gray-950 placeholder-gray-400 transition-all shadow-sm"
+                className="w-full pl-12 pr-14 py-3 sm:py-4 border border-gray-200 rounded-full focus:outline-none focus:ring-2 focus:ring-[#63a2cf]/50 bg-[#fafafa] text-sm sm:text-base text-gray-950 placeholder-gray-400 transition-all shadow-sm"
             />
 
             <button
