@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { WelcomeScreen } from '@/components/auth/WelcomeScreen';
 import { Sidebar } from '@/components/dashboard/Sidebar';
 import { ChatArea } from '@/components/dashboard/ChatArea';
@@ -13,28 +13,32 @@ export default function Home() {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
 
-  // Load username and sessions from localStorage on mount
+  // Load persistent user name
   useEffect(() => {
     const savedName = localStorage.getItem('fa_user_name');
     if (savedName) {
       setUserName(savedName);
     }
-    const savedSessions = localStorage.getItem('fa_chat_sessions');
-    if (savedSessions) {
-      try {
-        const parsed = JSON.parse(savedSessions);
-        setSessions(parsed);
-      } catch (e) {
-        console.error('Failed to parse saved chat sessions', e);
+  }, []);
+
+  // Fetch real chat sessions from Postgres database via API
+  const fetchSessions = useCallback(async () => {
+    try {
+      const res = await fetch('/api/sessions');
+      const data = await res.json();
+      if (res.ok && data.sessions) {
+        setSessions(data.sessions);
       }
+    } catch (e) {
+      console.error('Failed to fetch sessions from Postgres database:', e);
     }
   }, []);
 
-  // Save sessions to localStorage when updated
-  const updateSessions = (newSessions: ChatSession[]) => {
-    setSessions(newSessions);
-    localStorage.setItem('fa_chat_sessions', JSON.stringify(newSessions));
-  };
+  useEffect(() => {
+    if (userName) {
+      fetchSessions();
+    }
+  }, [userName, fetchSessions]);
 
   const handleSetUserName = (name: string) => {
     setUserName(name);
@@ -58,26 +62,30 @@ export default function Home() {
     setSidebarOpen(false);
   };
 
-  const handleDeleteChat = (id: string, e: React.MouseEvent) => {
+  const handleDeleteChat = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    const filtered = sessions.filter((s) => s.id !== id);
-    updateSessions(filtered);
-    if (activeChatId === id) {
-      setActiveChatId(null);
-      setCurrentView('new-chat');
+    try {
+      await fetch(`/api/sessions?id=${id}`, { method: 'DELETE' });
+      setSessions((prev) => prev.filter((s) => s.id !== id));
+      if (activeChatId === id) {
+        setActiveChatId(null);
+        setCurrentView('new-chat');
+      }
+    } catch (err) {
+      console.error('Failed to delete chat session:', err);
     }
   };
 
   const handleSaveSession = (updatedSession: ChatSession) => {
-    const index = sessions.findIndex((s) => s.id === updatedSession.id);
-    let newSessions: ChatSession[];
-    if (index >= 0) {
-      newSessions = [...sessions];
-      newSessions[index] = updatedSession;
-    } else {
-      newSessions = [updatedSession, ...sessions];
-    }
-    updateSessions(newSessions);
+    setSessions((prev) => {
+      const index = prev.findIndex((s) => s.id === updatedSession.id);
+      if (index >= 0) {
+        const copy = [...prev];
+        copy[index] = updatedSession;
+        return copy;
+      }
+      return [updatedSession, ...prev];
+    });
     setActiveChatId(updatedSession.id);
   };
 

@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send as PaperAirplaneIcon, Plus as PlusIcon } from 'lucide-react';
-import { Message, ChatSession } from '@/utils/types';
+import { Send as PaperAirplaneIcon, Plus as PlusIcon, Loader2, FileText } from 'lucide-react';
+import { Message, ChatSession, FinancialSummaryData } from '@/utils/types';
 
 interface ChatAreaProps {
     userName: string;
@@ -19,24 +19,30 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
     const [messages, setMessages] = useState<Message[]>(activeSession ? activeSession.messages : []);
     const [currentSessionId, setCurrentSessionId] = useState<string | null>(activeSession ? activeSession.id : null);
+    const [financialSummary, setFinancialSummary] = useState<FinancialSummaryData | undefined>(activeSession?.financialSummary);
+    const [isLoading, setIsLoading] = useState(false);
+    const [loadingStatus, setLoadingStatus] = useState<string>('');
+
     const fileInputRef = useRef<HTMLInputElement>(null);
     const chatEndRef = useRef<HTMLDivElement>(null);
 
-    // Sync messages if activeSession changes
+    // Sync state when activeSession changes
     useEffect(() => {
         if (activeSession) {
             setMessages(activeSession.messages);
             setCurrentSessionId(activeSession.id);
+            setFinancialSummary(activeSession.financialSummary);
         } else {
             setMessages([]);
             setCurrentSessionId(null);
+            setFinancialSummary(undefined);
         }
     }, [activeSession]);
 
-    // Auto scroll down on new messages
+    // Scroll chat to bottom on new messages
     useEffect(() => {
         chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, [messages]);
+    }, [messages, loadingStatus]);
 
     const handlePlusClick = () => {
         fileInputRef.current?.click();
@@ -44,95 +50,177 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files.length > 0) {
-            setSelectedFile(e.target.files[0]);
+            const file = e.target.files[0];
+            if (!file.name.toLowerCase().endsWith('.pdf')) {
+                alert('Please upload a PDF bank statement.');
+                return;
+            }
+            setSelectedFile(file);
         }
     };
 
-    // Helper to generate concise title from text or file
     const generateChatTitle = (text: string, file: File | null): string => {
-        if (file && !text) {
-            return `File: ${file.name}`;
-        }
+        if (file) return `Statement: ${file.name}`;
         if (text) {
             const cleanText = text.trim();
-            if (cleanText.length <= 35) return cleanText;
-            return cleanText.substring(0, 32) + '...';
+            return cleanText.length <= 35 ? cleanText : cleanText.substring(0, 32) + '...';
         }
-        return 'New Financial Inquiry';
+        return 'Financial Consultation';
     };
 
-    const handleSend = (e: React.FormEvent) => {
+    const handleSend = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!message.trim() && !selectedFile) return;
+        if ((!message.trim() && !selectedFile) || isLoading) return;
 
-        const userMsgText = message;
+        const userText = message.trim();
         const attachedFile = selectedFile;
 
-        // Construct new user message
-        const userMsg: Message = {
-            id: Date.now().toString(),
-            text: userMsgText,
-            sender: 'user',
-            fileName: attachedFile?.name,
-        };
-
-        const newMessages = [...messages, userMsg];
-        setMessages(newMessages);
-
-        // Determine session ID and title
-        const sessionId = currentSessionId || Date.now().toString();
-        const sessionTitle = activeSession
-            ? activeSession.title
-            : generateChatTitle(userMsgText, attachedFile);
-
-        // Save session immediately with user message
-        const sessionToSave: ChatSession = {
-            id: sessionId,
-            title: sessionTitle,
-            messages: newMessages,
-            createdAt: activeSession ? activeSession.createdAt : Date.now(),
-        };
-
-        setCurrentSessionId(sessionId);
-        onSaveSession(sessionToSave);
-
-        // Clear inputs
         setMessage('');
         setSelectedFile(null);
 
-        // Simulated AI response
-        setTimeout(() => {
-            let aiText = `Thanks for asking! Let me analyze your financial details.`;
-            if (attachedFile) {
-                aiText = `I have received your document "${attachedFile.name}". I am processing the statement items to calculate your totals, savings, and expense categories.`;
-            } else if (userMsgText.toLowerCase().includes('budget') || userMsgText.toLowerCase().includes('spend')) {
-                aiText = `To create an effective budget, standard rules recommend splitting your net income into 50% Needs, 30% Wants, and 20% Savings. Would you like me to analyze your statement for exact figures?`;
-            } else if (userMsgText.toLowerCase().includes('save') || userMsgText.toLowerCase().includes('investment')) {
-                aiText = `Building an emergency fund with 3 to 6 months of living expenses is the best starting step before pursuing higher-risk investments.`;
+        let activeSessionId = currentSessionId;
+        let updatedSummary = financialSummary;
+
+        setIsLoading(true);
+
+        // 1. Process PDF file upload if attached
+        if (attachedFile) {
+            setLoadingStatus('Processing PDF & generating Voyage AI vectors...');
+
+            const formData = new FormData();
+            formData.append('file', attachedFile);
+            if (activeSessionId) {
+                formData.append('sessionId', activeSessionId);
             }
 
-            const aiMsg: Message = {
-                id: (Date.now() + 1).toString(),
-                text: aiText,
-                sender: 'ai',
+            try {
+                const uploadRes = await fetch('/api/upload', {
+                    method: 'POST',
+                    body: formData,
+                });
+                const uploadData = await uploadRes.json();
+
+                if (!uploadRes.ok) {
+                    throw new Error(uploadData.error || 'Failed to upload bank statement');
+                }
+
+                activeSessionId = uploadData.sessionId;
+                setCurrentSessionId(uploadData.sessionId);
+                updatedSummary = uploadData.summary;
+                setFinancialSummary(uploadData.summary);
+
+                // Append user upload message
+                const uploadMsg: Message = {
+                    id: Date.now().toString(),
+                    text: userText || `Uploaded PDF bank statement: ${attachedFile.name}`,
+                    sender: 'user',
+                    fileName: attachedFile.name,
+                };
+
+                setMessages((prev) => [...prev, uploadMsg]);
+
+            } catch (err: unknown) {
+                const errorMessage = err instanceof Error ? err.message : 'Upload failed';
+                alert(errorMessage);
+                setIsLoading(false);
+                setLoadingStatus('');
+                return;
+            }
+        } else {
+            // Normal message push
+            const userMsg: Message = {
+                id: Date.now().toString(),
+                text: userText,
+                sender: 'user',
             };
+            setMessages((prev) => [...prev, userMsg]);
+        }
 
-            const updatedMessagesWithAi = [...newMessages, aiMsg];
-            setMessages(updatedMessagesWithAi);
+        // 2. Query Anthropic Claude via streaming API
+        setLoadingStatus('Anthropic Claude is analyzing details...');
 
-            onSaveSession({
-                ...sessionToSave,
-                messages: updatedMessagesWithAi,
+        const aiMsgId = (Date.now() + 1).toString();
+        const initialAiMsg: Message = {
+            id: aiMsgId,
+            text: '',
+            sender: 'ai',
+        };
+
+        setMessages((prev) => [...prev, initialAiMsg]);
+
+        try {
+            const chatRes = await fetch('/api/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    message: userText || 'Please give me a complete financial analysis of my uploaded bank statement.',
+                    sessionId: activeSessionId,
+                }),
             });
-        }, 700);
+
+            const returnedSessionId = chatRes.headers.get('x-session-id') || activeSessionId;
+            if (returnedSessionId) {
+                activeSessionId = returnedSessionId;
+                setCurrentSessionId(returnedSessionId);
+            }
+
+            if (!chatRes.ok || !chatRes.body) {
+                throw new Error('Failed to get streaming response from Claude AI');
+            }
+
+            const reader = chatRes.body.getReader();
+            const decoder = new TextDecoder();
+            let accumulatedText = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                const chunk = decoder.decode(value, { stream: true });
+                accumulatedText += chunk;
+
+                const currentText = accumulatedText;
+                setMessages((prev) =>
+                    prev.map((msg) => (msg.id === aiMsgId ? { ...msg, text: currentText } : msg))
+                );
+            }
+
+            // Sync full session to parent state
+            const title = activeSession
+                ? activeSession.title
+                : generateChatTitle(userText, attachedFile);
+
+            if (activeSessionId) {
+                onSaveSession({
+                    id: activeSessionId,
+                    title: title,
+                    messages: messages,
+                    createdAt: activeSession ? activeSession.createdAt : Date.now(),
+                    financialSummary: updatedSummary,
+                });
+            }
+
+        } catch (err: unknown) {
+            console.error('Chat error:', err);
+            const errorMessage = err instanceof Error ? err.message : 'Error generating response';
+            setMessages((prev) =>
+                prev.map((msg) =>
+                    msg.id === aiMsgId
+                        ? { ...msg, text: `Sorry, I encountered an error: ${errorMessage}` }
+                        : msg
+                )
+            );
+        } finally {
+            setIsLoading(false);
+            setLoadingStatus('');
+        }
     };
 
     const hasChatStarted = messages.length > 0 || selectedFile !== null;
 
     return (
-        /* Changed h-screen to h-full max-h-screen to snap exactly to its layout block */
         <section className="flex-1 flex flex-col h-full max-h-screen w-full bg-white relative overflow-hidden">
-            {/* Top Header navbar */}
+            {/* Top Navigation Header */}
             <header className="h-16 border-b border-gray-100 flex items-center justify-between px-4 sm:px-8 bg-white z-10 shrink-0">
                 <div className="flex items-center gap-3">
                     <button
@@ -145,7 +233,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                     </button>
                     <div>
                         <h1 className="font-bold text-base sm:text-lg text-[#0b3c5d]">
-                            {'Finance AI'}
+                            Finance AI
                         </h1>
                     </div>
                 </div>
@@ -156,19 +244,31 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
             </header>
 
             {/* Main Content Area */}
-            {/* Swapped p-4 sm:p-8 to py-4 px-4 sm:p-8 to avoid unnecessary bottom-padding cutoff */}
             <main className={`flex-1 overflow-y-auto py-4 px-4 sm:p-8 flex flex-col min-h-0 transition-all duration-500 ${hasChatStarted ? 'justify-start' : 'justify-center items-center'
                 }`}>
                 {/* Initial Welcome Text */}
                 {!hasChatStarted && (
-                    <div className="text-center space-y-2 mb-8 animate-fade-in w-full">
-                        <p className="text-gray-400 text-base sm:text-lg px-4">
-                            Welcome {userName}! Ask me anything about your finances or upload a bank statement.
+                    <div className="text-center space-y-2 mb-8 animate-fade-in w-full max-w-xl">
+                        <div className="w-16 h-16 bg-[#eaf2f8] text-[#4682b4] text-3xl rounded-full flex items-center justify-center mx-auto mb-4 border border-[#63a2cf]/30 shadow-inner">
+                            🤖
+                        </div>
+                        <h2 className="text-xl sm:text-2xl font-bold text-gray-800">
+                            Welcome {userName}!
+                        </h2>
+                        <p className="text-gray-500 text-sm sm:text-base px-4">
+                            Upload a PDF bank statement for instant vector intelligence, or ask any personal finance question.
                         </p>
                     </div>
                 )}
 
-                {/* Render Messages Timeline */}
+                {/* Render Financial Summary Card if available */}
+                {financialSummary && (
+                    <div className="w-full max-w-3xl mx-auto mb-4">
+                        <SummaryCard summary={financialSummary} />
+                    </div>
+                )}
+
+                {/* Render Chat Messages Timeline */}
                 {messages.length > 0 && (
                     <div className="w-full max-w-3xl mx-auto space-y-4 mb-2">
                         {messages.map((msg) => (
@@ -181,24 +281,41 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                                         ? 'bg-[#63a2cf] text-white rounded-tr-none'
                                         : 'bg-gray-100 text-gray-800 rounded-tl-none border border-gray-200'
                                     }`}>
-                                    {msg.text && <p className="whitespace-pre-wrap break-words">{msg.text}</p>}
+                                    {msg.text ? (
+                                        <div className="whitespace-pre-wrap break-words">{msg.text}</div>
+                                    ) : (
+                                        <div className="flex items-center gap-2 text-gray-400 py-1">
+                                            <Loader2 className="w-4 h-4 animate-spin text-[#63a2cf]" />
+                                            <span className="text-xs">Claude is thinking...</span>
+                                        </div>
+                                    )}
                                     {msg.fileName && (
-                                        <div className={`inline-flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-md mt-1.5 ${msg.sender === 'user' ? 'bg-white/20 text-white' : 'bg-gray-200 text-gray-700'
+                                        <div className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-md mt-2 ${msg.sender === 'user' ? 'bg-white/20 text-white' : 'bg-gray-200 text-gray-700'
                                             }`}>
-                                            📎 {msg.fileName}
+                                            <FileText className="w-3.5 h-3.5" /> {msg.fileName}
                                         </div>
                                     )}
                                 </div>
                             </div>
                         ))}
+
+                        {/* Animated Loading Status */}
+                        {isLoading && loadingStatus && (
+                            <div className="flex items-center gap-2 text-xs text-gray-500 bg-gray-50 border border-gray-100 px-3 py-2 rounded-xl w-fit mx-auto animate-pulse">
+                                <Loader2 className="w-3.5 h-3.5 animate-spin text-[#63a2cf]" />
+                                <span>{loadingStatus}</span>
+                            </div>
+                        )}
+
                         <div ref={chatEndRef} />
                     </div>
                 )}
 
-                {/* Selected Pending File Preview */}
+                {/* Selected File Preview when Idle */}
                 {selectedFile && !messages.length && (
-                    <div className="inline-flex items-center gap-2 bg-gray-100 border border-gray-200 text-gray-600 text-xs sm:text-sm px-3 py-1.5 rounded-lg mb-4 animate-fade-in">
-                        📎 <span className="font-medium truncate max-w-[200px]">{selectedFile.name}</span>
+                    <div className="inline-flex items-center gap-2 bg-blue-50 border border-blue-200 text-blue-800 text-xs sm:text-sm px-3.5 py-2 rounded-xl mb-4 animate-fade-in">
+                        <FileText className="w-4 h-4 text-[#63a2cf]" />
+                        <span className="font-medium truncate max-w-[200px]">{selectedFile.name}</span>
                         <button
                             type="button"
                             onClick={() => setSelectedFile(null)}
@@ -209,7 +326,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                     </div>
                 )}
 
-                {/* Centered Input Housing when Idle */}
+                {/* Input Box when Idle */}
                 {!hasChatStarted && (
                     <div className="w-full max-w-2xl transition-all duration-500">
                         <ChatInputForm
@@ -219,18 +336,20 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                             fileInputRef={fileInputRef}
                             handleFileChange={handleFileChange}
                             handlePlusClick={handlePlusClick}
+                            isLoading={isLoading}
                         />
                     </div>
                 )}
             </main>
 
-            {/* Bottom Input Housing when Active */}
+            {/* Bottom Footer Input Box when Active */}
             {hasChatStarted && (
                 <footer className="p-3 sm:p-6 border-t border-gray-100 bg-white shrink-0">
                     <div className="max-w-3xl mx-auto">
                         {selectedFile && (
-                            <div className="inline-flex items-center gap-2 bg-gray-100 border border-gray-200 text-gray-600 text-xs sm:text-sm px-3 py-1.5 rounded-lg mb-2">
-                                📎 <span className="font-medium truncate max-w-[200px]">{selectedFile.name}</span>
+                            <div className="inline-flex items-center gap-2 bg-blue-50 border border-blue-200 text-blue-800 text-xs sm:text-sm px-3 py-1.5 rounded-lg mb-2">
+                                <FileText className="w-4 h-4 text-[#63a2cf]" />
+                                <span className="font-medium truncate max-w-[200px]">{selectedFile.name}</span>
                                 <button type="button" onClick={() => setSelectedFile(null)} className="text-gray-400 hover:text-red-500 font-bold ml-1">&times;</button>
                             </div>
                         )}
@@ -241,6 +360,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                             fileInputRef={fileInputRef}
                             handleFileChange={handleFileChange}
                             handlePlusClick={handlePlusClick}
+                            isLoading={isLoading}
                         />
                     </div>
                 </footer>
@@ -249,6 +369,52 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
     );
 };
 
+// Clean Financial Summary Component
+const SummaryCard: React.FC<{ summary: FinancialSummaryData }> = ({ summary }) => (
+    <div className="bg-gradient-to-br from-[#0b3c5d] to-[#1d5c88] text-white p-5 rounded-2xl shadow-sm my-2 space-y-4">
+        <div className="flex justify-between items-center border-b border-white/20 pb-3">
+            <h3 className="font-semibold text-sm sm:text-base flex items-center gap-2">
+                📊 Bank Statement Overview
+            </h3>
+            <span className="bg-white/20 text-xs px-2.5 py-1 rounded-full font-medium">
+                Savings Rate: {summary.savingsRatePercent}%
+            </span>
+        </div>
+        <div className="grid grid-cols-3 gap-2.5 text-center">
+            <div className="bg-white/10 p-2.5 rounded-xl backdrop-blur-sm">
+                <p className="text-[11px] text-blue-200 uppercase font-medium">Inflow</p>
+                <p className="font-bold text-xs sm:text-sm text-emerald-300">
+                    ${summary.totalInflow.toLocaleString()}
+                </p>
+            </div>
+            <div className="bg-white/10 p-2.5 rounded-xl backdrop-blur-sm">
+                <p className="text-[11px] text-blue-200 uppercase font-medium">Outflow</p>
+                <p className="font-bold text-xs sm:text-sm text-rose-300">
+                    ${summary.totalOutflow.toLocaleString()}
+                </p>
+            </div>
+            <div className="bg-white/10 p-2.5 rounded-xl backdrop-blur-sm">
+                <p className="text-[11px] text-blue-200 uppercase font-medium">Net Savings</p>
+                <p className="font-bold text-xs sm:text-sm text-amber-300">
+                    ${summary.netSavings.toLocaleString()}
+                </p>
+            </div>
+        </div>
+        {summary.categories && Object.keys(summary.categories).length > 0 && (
+            <div className="pt-1">
+                <p className="text-xs text-blue-200 mb-1.5 font-medium">Expense Categories:</p>
+                <div className="flex flex-wrap gap-1.5">
+                    {Object.entries(summary.categories).map(([cat, amt]) => amt > 0 && (
+                        <span key={cat} className="bg-black/20 text-[11px] px-2 py-0.5 rounded-md">
+                            {cat}: <strong className="text-white">${amt.toLocaleString()}</strong>
+                        </span>
+                    ))}
+                </div>
+            </div>
+        )}
+    </div>
+);
+
 interface InputFormProps {
     message: string;
     setMessage: (val: string) => void;
@@ -256,6 +422,7 @@ interface InputFormProps {
     fileInputRef: React.RefObject<HTMLInputElement | null>;
     handleFileChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
     handlePlusClick: () => void;
+    isLoading: boolean;
 }
 
 const ChatInputForm: React.FC<InputFormProps> = ({
@@ -264,7 +431,8 @@ const ChatInputForm: React.FC<InputFormProps> = ({
     handleSend,
     fileInputRef,
     handleFileChange,
-    handlePlusClick
+    handlePlusClick,
+    isLoading
 }) => {
     return (
         <form onSubmit={handleSend} className="w-full flex items-center gap-3 relative">
@@ -273,30 +441,38 @@ const ChatInputForm: React.FC<InputFormProps> = ({
                 ref={fileInputRef}
                 onChange={handleFileChange}
                 className="hidden"
-                accept=".csv,.pdf,.json,image/*"
+                accept=".pdf"
             />
 
             <button
                 type="button"
                 onClick={handlePlusClick}
-                className="absolute left-3 p-2 text-gray-400 hover:text-gray-600 active:scale-95 transition-all z-10"
+                disabled={isLoading}
+                title="Upload PDF statement"
+                className="absolute left-3 p-2 text-gray-400 hover:text-gray-600 active:scale-95 transition-all z-10 disabled:opacity-50"
             >
                 <PlusIcon className="w-5 h-5 sm:w-6 sm:h-6 stroke-[2.5]" />
             </button>
 
             <input
                 type="text"
-                placeholder="Type your question for Finance AI..."
+                placeholder="Ask Finance AI a question or upload a PDF statement..."
                 value={message}
+                disabled={isLoading}
                 onChange={(e) => setMessage(e.target.value)}
-                className="w-full pl-12 pr-14 py-3 sm:py-4 border border-gray-200 rounded-full focus:outline-none focus:ring-2 focus:ring-[#63a2cf]/50 bg-[#fafafa] text-sm sm:text-base text-gray-950 placeholder-gray-400 transition-all shadow-sm"
+                className="w-full pl-12 pr-14 py-3 sm:py-4 border border-gray-200 rounded-full focus:outline-none focus:ring-2 focus:ring-[#63a2cf]/50 bg-[#fafafa] text-sm sm:text-base text-gray-950 placeholder-gray-400 transition-all shadow-sm disabled:bg-gray-100"
             />
 
             <button
                 type="submit"
-                className="absolute right-1.5 p-2.5 sm:p-3 bg-[#63a2cf] text-white rounded-full hover:bg-[#5291be] transition-colors"
+                disabled={isLoading}
+                className="absolute right-1.5 p-2.5 sm:p-3 bg-[#63a2cf] text-white rounded-full hover:bg-[#5291be] transition-colors disabled:opacity-50"
             >
-                <PaperAirplaneIcon className="w-4 sm:w-5 h-4 sm:h-5 transform rotate-45 -translate-y-0.5 translate-x-0.5" />
+                {isLoading ? (
+                    <Loader2 className="w-4 sm:w-5 h-4 sm:h-5 animate-spin" />
+                ) : (
+                    <PaperAirplaneIcon className="w-4 sm:w-5 h-4 sm:h-5 transform rotate-45 -translate-y-0.5 translate-x-0.5" />
+                )}
             </button>
         </form>
     );
