@@ -11,10 +11,14 @@ type SessionWithRelations = Prisma.ChatSessionGetPayload<{
     };
 }>;
 
-// GET /api/sessions - Fetch all chat sessions from database
-export async function GET() {
+// GET /api/sessions - Fetch all chat sessions from database (optionally filtered by userId)
+export async function GET(req: NextRequest) {
     try {
+        const { searchParams } = new URL(req.url);
+        const userId = searchParams.get('userId');
+
         const sessions = await prisma.chatSession.findMany({
+            where: userId ? { userId } : {},
             orderBy: { updatedAt: 'desc' },
             include: {
                 messages: {

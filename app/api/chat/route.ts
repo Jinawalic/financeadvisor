@@ -9,7 +9,7 @@ import { prisma } from '@/lib/db';
 export async function POST(req: NextRequest) {
     try {
         const body = await req.json();
-        const { message, sessionId: inputSessionId } = body;
+        const { message, sessionId: inputSessionId, userId } = body;
 
         if (!message || typeof message !== 'string') {
             return NextResponse.json({ error: 'Message text is required' }, { status: 400 });
@@ -17,11 +17,12 @@ export async function POST(req: NextRequest) {
 
         let sessionId = inputSessionId;
 
-        // Ensure session exists in Postgres
+        // Ensure session exists in Postgres & link to userId
         if (!sessionId) {
             const newSession = await prisma.chatSession.create({
                 data: {
                     title: message.substring(0, 35) || 'Financial Chat',
+                    userId: userId || undefined,
                 }
             });
             sessionId = newSession.id;
@@ -32,7 +33,13 @@ export async function POST(req: NextRequest) {
                     data: {
                         id: sessionId,
                         title: message.substring(0, 35) || 'Financial Chat',
+                        userId: userId || undefined,
                     }
+                });
+            } else if (userId && !existing.userId) {
+                await prisma.chatSession.update({
+                    where: { id: sessionId },
+                    data: { userId }
                 });
             }
         }
@@ -83,17 +90,27 @@ Financial Summary Overview:
         }
 
         // 3. Build System Prompt for Anthropic Claude
-        const systemPrompt = `You are Finance AI, an expert professional financial advisor assistant.
-Your job is to assist users with personalized financial advice, bank statement breakdown, budgeting strategies, and expense management.
+        const systemPrompt = `You are Finance AI, an expert, highly professional financial advisor assistant.
+Your job is to assist users with personalized financial advice, bank statement analysis, budget planning, debt management, cash flow optimization, and expense control.
 
 ${summaryContext ? `### User's Financial Statement Summary:\n${summaryContext}\n` : ''}
 ${ragContext ? `### Relevant Line Items from User's Bank Statement:\n${ragContext}\n` : ''}
 
-Instructions:
-- Provide clear, actionable, accurate financial insights.
-- If asked specific questions about their bank statement, cite figures from the provided context.
-- Keep responses professional, encouraging, concise, and formatted clearly using Markdown.
-- If no bank statement is attached or context is missing for a question, provide best-practice financial guidance.`;
+Strict Operating Rules & Guidelines:
+1. STRICTLY TEXT-BASED RESPONSES:
+   - Provide clean, professional text responses formatted in Markdown (headings, bold text, bullet points, numbered lists, and markdown tables when helpful).
+   - NEVER generate or attempt to draw charts, graphs, SVG diagrams, ASCII graphics, or code meant to render visual plots. Output must strictly resemble standard text-based responses.
+
+2. NON-FINANCIAL TOPIC GUARDRAIL:
+   - If the user asks a question unrelated to finance, money management, banking, economics, budgeting, business, or financial decision-making (e.g. general trivia, entertainment, coding, recipes, sports, etc.), politely decline to answer that non-financial topic and guide them back to financial topics.
+
+3. BANK STATEMENT & FINANCIAL BREAKDOWN HANDLING:
+   - If the user requests personalized financial analysis or statement insights, but has NEITHER uploaded a bank statement NOR provided a text breakdown of their income/expenses in their message or context:
+     -> Politely inform them that to provide precise financial guidance, you need data. Ask them to either upload their bank statement document (PDF or image) or type out their complete income and expense breakdown directly in the chat.
+   - If the user types out a manual financial breakdown (e.g., listing monthly salary, rent, food, savings, debt, or specific transaction items), thoroughly analyze every line item, calculate totals, identify high-expense areas, and deliver a comprehensive, structured professional financial recommendation.
+
+4. PROFESSIONAL TONE:
+   - Always maintain an encouraging, objective, clear, and highly professional tone suitable for a certified financial advisor.`;
 
         // 4. Retrieve recent message history from DB (up to 10 previous messages)
         const pastMessages = await prisma.message.findMany({

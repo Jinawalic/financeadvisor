@@ -8,46 +8,77 @@ import { ChatSession } from '@/utils/types';
 
 export default function Home() {
   const [userName, setUserName] = useState<string>('');
+  const [userId, setUserId] = useState<string>('');
   const [currentView, setCurrentView] = useState<string>('new-chat');
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(false);
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
 
-  // Load persistent user name
-  useEffect(() => {
-    const savedName = localStorage.getItem('fa_user_name');
-    if (savedName) {
-      setUserName(savedName);
-    }
-  }, []);
-
-  // Fetch real chat sessions from Postgres database via API
-  const fetchSessions = useCallback(async () => {
+  // Fetch chat sessions for user from Postgres database via API
+  const fetchSessions = useCallback(async (uid: string) => {
     try {
-      const res = await fetch('/api/sessions');
+      const res = await fetch(`/api/sessions?userId=${uid}`);
       const data = await res.json();
       if (res.ok && data.sessions) {
         setSessions(data.sessions);
+        // Automatically select the most recent active chat if available
+        if (data.sessions.length > 0) {
+          setActiveChatId(data.sessions[0].id);
+          setCurrentView('history');
+        } else {
+          setActiveChatId(null);
+          setCurrentView('new-chat');
+        }
       }
     } catch (e) {
-      console.error('Failed to fetch sessions from Postgres database:', e);
+      console.error('Failed to fetch user sessions from Postgres database:', e);
     }
   }, []);
 
+  // Load persistent user credentials & auto-login if saved
   useEffect(() => {
-    if (userName) {
-      fetchSessions();
+    const savedName = localStorage.getItem('fa_user_name');
+    const savedId = localStorage.getItem('fa_user_id');
+    if (savedName && savedId) {
+      setUserName(savedName);
+      setUserId(savedId);
+      fetchSessions(savedId);
     }
-  }, [userName, fetchSessions]);
+  }, [fetchSessions]);
 
-  const handleSetUserName = (name: string) => {
-    setUserName(name);
-    localStorage.setItem('fa_user_name', name);
+  const handleSetUserName = async (name: string) => {
+    try {
+      const res = await fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      });
+      const data = await res.json();
+
+      if (res.ok && data.user) {
+        const user = data.user;
+        setUserName(user.name);
+        setUserId(user.id);
+        localStorage.setItem('fa_user_name', user.name);
+        localStorage.setItem('fa_user_id', user.id);
+
+        await fetchSessions(user.id);
+      } else {
+        alert(data.error || 'Failed to register/authenticate user');
+      }
+    } catch (err) {
+      console.error('User register/login error:', err);
+      alert('Failed to connect to user service');
+    }
   };
 
   const handleLogout = () => {
     setUserName('');
+    setUserId('');
+    setSessions([]);
+    setActiveChatId(null);
     localStorage.removeItem('fa_user_name');
+    localStorage.removeItem('fa_user_id');
   };
 
   const handleNewChat = () => {
@@ -89,7 +120,7 @@ export default function Home() {
     setActiveChatId(updatedSession.id);
   };
 
-  if (!userName) {
+  if (!userName || !userId) {
     return <WelcomeScreen onNext={handleSetUserName} />;
   }
 
@@ -112,6 +143,7 @@ export default function Home() {
       <ChatArea
         key={activeChatId || 'new-session'}
         userName={userName}
+        userId={userId}
         onMenuToggle={() => setSidebarOpen(!sidebarOpen)}
         activeSession={activeSession}
         onSaveSession={handleSaveSession}

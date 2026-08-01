@@ -4,6 +4,7 @@ import { Message, ChatSession, FinancialSummaryData } from '@/utils/types';
 
 interface ChatAreaProps {
     userName: string;
+    userId?: string;
     onMenuToggle: () => void;
     activeSession: ChatSession | null;
     onSaveSession: (session: ChatSession) => void;
@@ -11,6 +12,7 @@ interface ChatAreaProps {
 
 export const ChatArea: React.FC<ChatAreaProps> = ({
     userName,
+    userId,
     onMenuToggle,
     activeSession,
     onSaveSession,
@@ -155,6 +157,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                 body: JSON.stringify({
                     message: userText || 'Please give me a complete financial analysis of my uploaded bank statement.',
                     sessionId: activeSessionId,
+                    userId: userId,
                 }),
             });
 
