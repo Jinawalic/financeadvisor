@@ -139,7 +139,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
         }
 
         // 2. Query Anthropic Claude via streaming API
-        setLoadingStatus('Anthropic Claude is analyzing details...');
+        setLoadingStatus('Finance AI is analyzing your data...');
 
         const aiMsgId = (Date.now() + 1).toString();
         const initialAiMsg: Message = {
@@ -167,8 +167,20 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                 setCurrentSessionId(returnedSessionId);
             }
 
-            if (!chatRes.ok || !chatRes.body) {
-                throw new Error('Failed to get streaming response from Claude AI');
+            // If request failed, read error body and throw
+            if (!chatRes.ok) {
+                let errMsg = `Server error (${chatRes.status})`;
+                try {
+                    const errData = await chatRes.json();
+                    errMsg = errData.details || errData.error || errMsg;
+                } catch {
+                    errMsg = await chatRes.text().catch(() => errMsg);
+                }
+                throw new Error(errMsg);
+            }
+
+            if (!chatRes.body) {
+                throw new Error('No response body received from AI');
             }
 
             const reader = chatRes.body.getReader();
@@ -182,9 +194,16 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                 const chunk = decoder.decode(value, { stream: true });
                 accumulatedText += chunk;
 
-                const currentText = accumulatedText;
                 setMessages((prev) =>
-                    prev.map((msg) => (msg.id === aiMsgId ? { ...msg, text: currentText } : msg))
+                    prev.map((msg) => (msg.id === aiMsgId ? { ...msg, text: accumulatedText } : msg))
+                );
+            }
+
+            // If AI returned nothing at all, show fallback
+            if (!accumulatedText.trim()) {
+                accumulatedText = 'Sorry, I was unable to generate a response. Please try again.';
+                setMessages((prev) =>
+                    prev.map((msg) => (msg.id === aiMsgId ? { ...msg, text: accumulatedText } : msg))
                 );
             }
 
@@ -209,7 +228,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
             setMessages((prev) =>
                 prev.map((msg) =>
                     msg.id === aiMsgId
-                        ? { ...msg, text: `Sorry, I encountered an error: ${errorMessage}` }
+                        ? { ...msg, text: `⚠️ Sorry, something went wrong: ${errorMessage}` }
                         : msg
                 )
             );
@@ -261,13 +280,6 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                         <p className="text-gray-500 text-sm sm:text-base px-4">
                             Upload a PDF bank statement for instant vector intelligence, or ask any personal finance question.
                         </p>
-                    </div>
-                )}
-
-                {/* Render Financial Summary Card if available */}
-                {financialSummary && (
-                    <div className="w-full max-w-3xl mx-auto mb-4">
-                        <SummaryCard summary={financialSummary} />
                     </div>
                 )}
 
@@ -372,7 +384,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
     );
 };
 
-// Clean Financial Summary Component
+// Clean Financial Summary Component (using Naira ₦)
 const SummaryCard: React.FC<{ summary: FinancialSummaryData }> = ({ summary }) => (
     <div className="bg-gradient-to-br from-[#0b3c5d] to-[#1d5c88] text-white p-5 rounded-2xl shadow-sm my-2 space-y-4">
         <div className="flex justify-between items-center border-b border-white/20 pb-3">
@@ -387,19 +399,19 @@ const SummaryCard: React.FC<{ summary: FinancialSummaryData }> = ({ summary }) =
             <div className="bg-white/10 p-2.5 rounded-xl backdrop-blur-sm">
                 <p className="text-[11px] text-blue-200 uppercase font-medium">Inflow</p>
                 <p className="font-bold text-xs sm:text-sm text-emerald-300">
-                    ${summary.totalInflow.toLocaleString()}
+                    ₦{summary.totalInflow.toLocaleString()}
                 </p>
             </div>
             <div className="bg-white/10 p-2.5 rounded-xl backdrop-blur-sm">
                 <p className="text-[11px] text-blue-200 uppercase font-medium">Outflow</p>
                 <p className="font-bold text-xs sm:text-sm text-rose-300">
-                    ${summary.totalOutflow.toLocaleString()}
+                    ₦{summary.totalOutflow.toLocaleString()}
                 </p>
             </div>
             <div className="bg-white/10 p-2.5 rounded-xl backdrop-blur-sm">
                 <p className="text-[11px] text-blue-200 uppercase font-medium">Net Savings</p>
                 <p className="font-bold text-xs sm:text-sm text-amber-300">
-                    ${summary.netSavings.toLocaleString()}
+                    ₦{summary.netSavings.toLocaleString()}
                 </p>
             </div>
         </div>
@@ -409,7 +421,7 @@ const SummaryCard: React.FC<{ summary: FinancialSummaryData }> = ({ summary }) =
                 <div className="flex flex-wrap gap-1.5">
                     {Object.entries(summary.categories).map(([cat, amt]) => amt > 0 && (
                         <span key={cat} className="bg-black/20 text-[11px] px-2 py-0.5 rounded-md">
-                            {cat}: <strong className="text-white">${amt.toLocaleString()}</strong>
+                            {cat}: <strong className="text-white">₦{amt.toLocaleString()}</strong>
                         </span>
                     ))}
                 </div>

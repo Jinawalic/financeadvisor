@@ -1,7 +1,8 @@
 export const runtime = 'nodejs';
+export const maxDuration = 60; // Allow up to 60s on Vercel for large PDF processing
 
 import { NextRequest, NextResponse } from 'next/server';
-import { PDFParse } from 'pdf-parse';
+import { extractText } from 'unpdf';
 import { analyzeTransactions, Transaction } from '@/utils/financialRules';
 import { generateBatchEmbeddings } from '@/utils/embeddings';
 import { prisma } from '@/lib/db';
@@ -40,18 +41,18 @@ export async function POST(req: NextRequest) {
             }
         }
 
-        // Parse PDF file using pdf-parse v2.4+ PDFParse class
+        // Parse PDF using unpdf (pure JS — serverless/Vercel safe)
         const arrayBuffer = await file.arrayBuffer();
-        const uint8Array = new Uint8Array(arrayBuffer);
-        const parser = new PDFParse({ data: uint8Array });
-        const textResult = await parser.getText();
-        const rawText = textResult.text || '';
-        await parser.destroy();
+        const { text: rawText } = await extractText(new Uint8Array(arrayBuffer), { mergePages: true });
 
-        const lines = rawText
+        const lines = (rawText ?? '')
             .split('\n')
             .map((line: string) => line.trim())
             .filter((line: string) => line.length > 5); // Filter noise lines
+
+        if (lines.length === 0) {
+            return NextResponse.json({ error: 'Could not extract any text from the PDF. Please ensure it is a text-based (not scanned) bank statement.' }, { status: 422 });
+        }
 
         const detectedTransactions: Transaction[] = [];
 
@@ -139,7 +140,7 @@ export async function POST(req: NextRequest) {
             chunkCount: lines.length
         });
     } catch (error: unknown) {
-        console.error("Upload Route Failure:", error);
+        console.error("Upload Route Failure:", error instanceof Error ? error.message : error);
         const detail = error instanceof Error ? error.message : String(error);
         return NextResponse.json({ error: 'Failed to parse statement and store vectors in database', details: detail }, { status: 500 });
     }

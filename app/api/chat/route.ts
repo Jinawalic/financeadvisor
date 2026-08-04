@@ -1,10 +1,16 @@
 export const runtime = 'nodejs';
+export const maxDuration = 60; // Allow up to 60 seconds for AI streaming on Vercel
 
 import { NextRequest, NextResponse } from 'next/server';
-import { anthropic } from '@ai-sdk/anthropic';
+import { createAnthropic } from '@ai-sdk/anthropic';
 import { streamText } from 'ai';
 import { generateEmbedding } from '@/utils/embeddings';
 import { prisma } from '@/lib/db';
+
+// Explicitly initialize Anthropic with API key to ensure it's always picked up
+const anthropic = createAnthropic({
+    apiKey: process.env.ANTHROPIC_API_KEY,
+});
 
 export async function POST(req: NextRequest) {
     try {
@@ -90,8 +96,10 @@ ${summaryContext ? `### User's Financial Statement Summary:\n${summaryContext}\n
 ${ragContext ? `### Relevant Line Items from User's Bank Statement:\n${ragContext}\n` : ''}
 
 Instructions:
-- Provide clear, actionable, accurate financial insights.
-- If asked specific questions about their bank statement, cite figures from the provided context.
+- Currency: ALWAYS use Nigerian Naira (₦) for all monetary values, prices, amounts, and figures. Never use dollars ($) or other currency symbols.
+- Output Style: Format all responses strictly as word/text-based conversational responses using clean Markdown (headers, bullet points, bold text), just like ChatGPT. Do NOT generate visual graph cards, visual component widgets, or ASCII diagrams.
+- Provide clear, actionable, and accurate financial insights.
+- If asked specific questions about their bank statement, present and cite figures from the provided context using ₦ (Naira).
 - Keep responses professional, encouraging, concise, and formatted clearly using Markdown.
 - If no bank statement is attached or context is missing for a question, provide best-practice financial guidance.`;
 
@@ -114,7 +122,7 @@ Instructions:
 
         // 5. Stream Claude AI response using Vercel AI SDK & Anthropic Provider
         const result = streamText({
-            model: anthropic('claude-3-5-sonnet-latest'),
+            model: anthropic('claude-3-5-sonnet-20241022'),
             system: systemPrompt,
             messages: formattedMessages,
             onFinish: async ({ text }) => {
@@ -136,12 +144,14 @@ Instructions:
 
         return result.toTextStreamResponse({
             headers: {
-                'x-session-id': sessionId,
+                'x-session-id': sessionId ?? '',
+                'Access-Control-Expose-Headers': 'x-session-id',
             }
         });
 
     } catch (error) {
-        console.error("Chat API Error:", error);
-        return NextResponse.json({ error: 'Internal chat server error' }, { status: 500 });
+        console.error("Chat API Error:", error instanceof Error ? error.message : error);
+        const detail = error instanceof Error ? error.message : String(error);
+        return NextResponse.json({ error: 'Internal chat server error', details: detail }, { status: 500 });
     }
 }
